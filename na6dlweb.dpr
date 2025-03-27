@@ -1,6 +1,7 @@
 ﻿(*
   小説家になろう小説HTMLダウンローダー
 
+  1.1 2025/03/27  ページ送りリンクの書き換えがおかしかった不具合を修正した
   1.0 2025/01/18  Na6dlを元にHTMLを保存する仕様に変更した
 
   Current Directory
@@ -141,8 +142,10 @@ end;
 procedure LoadEachPage(PageN: integer);
 var
   i, n: integer;
-  line, org, rpl, p: string;
+  line, org, rpl: string;
   html: TStringList;
+label
+  Cont;
 begin
   n := 1;
   Write('各話を取得中 [  0/' + Format('%3d', [PageN]) + ']' + #13);
@@ -155,72 +158,48 @@ begin
       line := LoadHTMLbyIndy(URL + IntToStr(i) + '/');
       if line <> '' then
       begin
+        html.Text := Line;
         RegEx.InputString := line;
-        RegEx.Expression  := '<div class="c-pager c-pager--center">'#13#10'<a href="/n.*?/" class="c-pager__item c-pager__item--before">前へ</a>';
+        rpl := '';
+        // 前へ　目次　次へ
+        RegEx.Expression  := '<div class="c-pager c-pager--center">.*?<a href=".*?" class="c-pager__item c-pager__item--before">前へ</a><a href=".*?" class="c-pager__item">目次</a>.*?<a href=".*?" class="c-pager__item c-pager__item--next">次へ</a></div>';
         if RegEx.Exec then
         begin
           org  := RegEx.Match[0];
-          rpl  := '<div class="c-pager c-pager--center">'#13#10'<a href=".\' + IntToStr(i - 1) + '.html" class="c-pager__item c-pager__item--before">前へ</a>';
+          rpl  := '<div class="c-pager c-pager--center">'#13#10'<a href=".\'
+                + IntToStr(i - 1)
+                + '.html" class="c-pager__item c-pager__item--before">前へ</a><a href=".\contents1.html" class="c-pager__item">目次</a>'#13#10'<a href="'
+                + IntToStr(i + 1)
+                + '.html" class="c-pager__item c-pager__item--next">次へ</a></div>';
           line := StringReplace(line, org, rpl, [rfReplaceAll]);
-          RegEx.InputString := line;
+          Goto Cont;
         end;
-        RegEx.Expression  := '<div class="c-pager c-pager--center">'#13#10'<a href="/n.*?/" class="c-pager__item c-pager__item--next">次へ</a>';
+        // 目次　次へ
+        RegEx.Expression  := '<div class="c-pager c-pager--center">.*?<a href=".*?" class="c-pager__item">目次</a>.*?<a href=".*?" class="c-pager__item c-pager__item--next">次へ</a></div>';
         if RegEx.Exec then
         begin
           org  := RegEx.Match[0];
-          rpl  := '<div class="c-pager c-pager--center">'#13#10'<a href=".\' + IntToStr(i + 1) + '.html" class="c-pager__item c-pager__item--next">次へ</a>';
+          rpl  := '<div class="c-pager c-pager--center">'#13#10'<a href=".\contents1.html" class="c-pager__item">目次</a>'#13#10'<a href=".\2.html" class="c-pager__item c-pager__item--next">次へ</a></div>';
           line := StringReplace(line, org, rpl, [rfReplaceAll]);
-          RegEx.InputString := line;
+          Goto Cont;
         end;
-        RegEx.Expression  := '前へ</a><a href="/n.*?/" class="c-pager__item c-pager__item--next">次へ</a>';
+        // 前へ　目次
+        RegEx.Expression  := '<div class="c-pager c-pager--center">.*?<a href=".*?" class="c-pager__item c-pager__item--before">前へ</a><a href=".*?" class="c-pager__item">目次</a>';
         if RegEx.Exec then
         begin
           org  := RegEx.Match[0];
-          rpl  := '前へ</a><a href=".\' + IntToStr(i + 1) + '.html" class="c-pager__item c-pager__item--next">次へ</a>';
+          rpl  := '<div class="c-pager c-pager--center">'#13#10'<a href="'
+                + IntToStr(i - 1)
+                + '.html" class="c-pager__item c-pager__item--before">前へ</a><a href=".\contents1.html" class="c-pager__item">目次</a>';
           line := StringReplace(line, org, rpl, [rfReplaceAll]);
-          RegEx.InputString := line;
         end;
-        RegEx.Expression  := '>次へ</a><a href="https://.*?/.*?/" class="c-pager__item">目次</a>';
-        if RegEx.Exec then
-        begin
-          org  := RegEx.Match[0];
-          rpl  := '>次へ</a><a href=".\contents1.html" class="c-pager__item">目次</a>';
-          line := StringReplace(line, org, rpl, [rfReplaceAll]);
-          RegEx.InputString := line;
-        end;
-        RegEx.Expression  := '>前へ</a><a href="https://.*?/.*?/" class="c-pager__item">目次</a>';
-        if RegEx.Exec then
-        begin
-          org  := RegEx.Match[0];
-          rpl  := '>前へ</a><a href=".\contents1.html" class="c-pager__item">目次</a>';
-          line := StringReplace(line, org, rpl, [rfReplaceAll]);
-          RegEx.InputString := line;
-        end;
-        RegEx.Expression  := '>次へ</a><a href="https://.*?/.*?/?p=\d.*?" class="c-pager__item">目次</a>';
-        if RegEx.Exec then
-        begin
-          org  := RegEx.Match[0];
-          p    := ReplaceRegExpr('" class="c-pager__item">目次</a>', ReplaceRegExpr('>次へ</a><a href="https://.*?/.*?/?p=', org, ''), '');
-          rpl  := '>次へ</a><a href=".\contents' + p + '.html" class="c-pager__item">目次</a>';
-          line := StringReplace(line, org, rpl, [rfReplaceAll]);
-          RegEx.InputString := line;
-        end;
-        RegEx.Expression  := '>前へ</a><a href="https://.*?/.*?/?p=\d.*?" class="c-pager__item">目次</a>';
-        if RegEx.Exec then
-        begin
-          org  := RegEx.Match[0];
-          p    := ReplaceRegExpr('" class="c-pager__item">目次</a>', ReplaceRegExpr('>前へ</a><a href="https://.*?/.*?/?p=', org, ''), '');
-          rpl  := '>前へ</a><a href=".\contents' + p + '.html" class="c-pager__item">目次</a>';
-          line := StringReplace(line, org, rpl, [rfReplaceAll]);
-          RegEx.InputString := line;
-        end;
+Cont:
         Inc(n);
         if DelJS then
           line := ReplaceRegExpr('<script.*?</script>', line, '');
         html.Text := line;
         html.SaveToFile(BaseDir + IntToStr(i) + '.html', TEncoding.UTF8);
       end;
-
       // サーバー側に負担をかけないため0.4秒のインターバルを入れる
       Sleep(400);
     end;
