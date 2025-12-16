@@ -25,17 +25,14 @@ program na6dlweb;
 {$R *.res}
 {$R na6dlwebver.res}
 
+
 uses
   LazUTF8wrap,
   System.SysUtils,
   System.Classes,
   Windows,
   regexpr,
-  IdHTTP,
-  IdCookieManager,
-  IdSSLOpenSSL,
-  IdGlobal,
-  IdURI;
+  WinINet;
 
 const
   DUMMY = '<!DOCTYPE html>'#13#10
@@ -49,69 +46,71 @@ const
         + '    <p>ジャンプしない場合は<a href=".\html\contents1.html">ここをクリックしてください.</a></p>'#13#10
         + '  </body>'#13#10
         + '</html>'#13#10;
+  UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
 var
-  IdHTTP: TIdHTTP;
-  IdSSL: TIdSSLIOHandlerSocketOpenSSL;
-  Cookies: TIdCookieManager;
-  URI: TIdURI;
   URL, BaseURL, BaseDir, FileName, TextLine: string;
+  CookieName, CookieData: string;
   isOver18: boolean;
   RegEx: TRegExpr;
   DelJS: boolean;
 
-// Indyを用いたHTMLファイルのダウンロード
-function LoadHTMLbyIndy(URLadr: string): string;
+function GetHTML(const AURL: string): string;
 var
-  IdURL: string;
-  rbuff: TMemoryStream;
-  tbuff: TStringList;
-  ret: Boolean;
-label
-  Terminate;
+  hSession    : HINTERNET;
+  hService    : HINTERNET;
+  dwBytesRead : DWORD;
+  dwFlag      : DWORD;
+  lpBuffer    : PChar;
+  RBuff       : TMemoryStream;
+  TBuff       : TStringList;
 begin
-	Result := '';
-  ret := False;
-
-  rbuff := TMemoryStream.Create;
-  tbuff := TStringList.Create;
-  try
-    try
-      IdHTTP.Head(URLadr);
-    except
-      //取得に失敗した場合、再度取得を試みる
-      try
-        IdHTTP.Head(URLadr);
-      except
-        ret := True;
-      end;
-    end;
-    if IdHTTP.ResponseCode = 302 then
+  Result   := '';
+  if (CookieName <> '') and (CookieData <> '') then
+{$IFDEF FPC}
+    InternetSetCookie(PAnsiChar(AURL), PAnsiChar(CookieName), PAnsiChar(CookieData));
+{$ELSE}
+    InternetSetCookieW(PWideChar(AURL), PWideChar(CookieName), PWideChar(CookieData));
+{$ENDIF}
+  hSession := InternetOpen(PChar(UA), INTERNET_OPEN_TYPE_PRECONFIG, nil, nil, 0);
+  if Assigned(hSession) then
+  begin
+    InternetSetOption(hSession, INTERNET_OPTION_USER_AGENT, PChar(ua), Length(ua));
+    dwFlag   := INTERNET_FLAG_RELOAD;
+    hService := InternetOpenUrl(hSession, PChar(AURL), nil, 0, dwFlag, 0);
+    if Assigned(hService ) then
     begin
-      //リダイレクト後のURLで再度Headメソッドを実行して情報取得
-      IdHTTP.Head(IdHTTP.Response.Location);
-    end;
-    if not ret then
-    begin
-      IdURL := IdHTTP.URL.URI;
+      RBuff := TMemoryStream.Create;
       try
-        IdHTTP.Get(IdURL, rbuff);
-      except
-        //取得に失敗した場合、再度取得を試みる
+        lpBuffer := AllocMem(65536);
         try
-          IdHTTP.Get(IdURL, rbuff);
-        except
-          Result := '';
+          dwBytesRead := 65535;
+          while True do
+          begin
+            if InternetReadFile(hService, lpBuffer, 65535,{SizeOf(lpBuffer),}dwBytesRead) then
+            begin
+              if dwBytesRead = 0 then
+                break;
+              RBuff.WriteBuffer(lpBuffer^, dwBytesRead);
+            end else
+              break;
+          end;
+        finally
+          FreeMem(lpBuffer);
         end;
+        TBuff := TStringList.Create;
+        try
+          RBuff.Position := 0;
+          TBuff.LoadFromStream(RBuff, TEncoding.UTF8);
+          Result := TBuff.Text;
+        finally
+          TBuff.Free;
+        end;
+      finally
+        RBuff.Free;
       end;
     end;
-    IdHTTP.Disconnect;
-    rbuff.Position := 0;
-    tbuff.LoadFromStream(rbuff, TEncoding.UTF8);
-    Result := tbuff.Text;
-  finally
-    tbuff.Free;
-    rbuff.Free;
+    InternetCloseHandle(hService);
   end;
 end;
 
@@ -155,7 +154,7 @@ begin
     begin
       Write(#13'各話を取得中 [' + Format('%3d', [i]) + '/' + Format('%3d', [PageN]) +']');
 
-      line := LoadHTMLbyIndy(URL + IntToStr(i) + '/');
+      line := GetHTML(URL + IntToStr(i) + '/');
       if line <> '' then
       begin
         html.Text := Line;
@@ -218,7 +217,7 @@ var
   str: string;
 begin
   Result := False;
-  str := LoadHTMLbyIndy(NiURL);
+  str := GetHTML(NiURL);
   if UTF8Length(str) = 0 then
     Exit;
   // 小説が短編かどうかチェックする
@@ -328,7 +327,7 @@ begin
         begin
           if i > 1 then
           begin
-            cont := LoadHTMLbyIndy(URL + '?p=' + IntToStr(i));
+            cont := GetHTML(URL + '?p=' + IntToStr(i));
             if cont = '' then
               Exit
             else if DelJS then
@@ -452,32 +451,10 @@ var
   asource: TStringStream;
 
 begin
-  // OpenSSLライブラリをチェック
-  if not CheckOpenSSL then
-  begin
-    Writeln('');
-    Writeln('na6dlを使用するためのOpenSSLライブラリが見つかりません.');
-    Writeln('以下のサイトからopenssl-1.0.2q-i386-win32.zipをダウンロードしてlibeay32.dllとssleay32.dllをna6dl.exeがあるフォルダにコピーして下さい.');
-    Writeln('https://github.com/IndySockets/OpenSSL-Binaries');
-    ExitCode := 2;
-    Exit;
-  end;
-  // OpenSSLのバージョンをチェック
-  if (UTF8Pos('1.0.2', GetVersionInfo('libeay32.dll')) = 0)
-    or (UTF8Pos('1.0.2', GetVersionInfo('ssleay32.dll')) = 0) then
-  begin
-    Writeln('');
-    Writeln('OpenSSLライブラリのバージョンが違います.');
-    Writeln('以下のサイトからopenssl-1.0.2q-i386-win32.zipをダウンロードしてlibeay32.dllとssleay32.dllをna6dl.exeがあるフォルダにコピーして下さい.');
-    Writeln('https://github.com/IndySockets/OpenSSL-Binaries');
-    ExitCode := 2;
-    Exit;
-  end;
-
   if ParamCount = 0 then
   begin
     Writeln('');
-    Writeln('na6dlweb ver1.0 2025/1/18 (c) INOUE, masahiro.');
+    Writeln('na6dlweb ver1.2 2025/12/16 (c) INOUE, masahiro.');
     Writeln('  使用方法');
     Writeln('  na6dlweb 小説トップページのURL');
     Exit;
@@ -513,37 +490,19 @@ begin
     isOver18 := True;
   end;
 
-  IdHTTP := TIdHTTP.Create(nil);
-  IdSSL := TIdSSLIOHandlerSocketOpenSSL.Create;
-  Cookies := TIdCookieManager.Create(nil);
   RegEx := TRegExpr.Create;
   try
-    IdSSL.IPVersion := Id_IPv4;
-    IdSSL.MaxLineLength := 32768;
-    IdSSL.SSLOptions.Method := sslvSSLv23;
-    IdSSL.SSLOptions.SSLVersions := [sslvSSLv2,sslvTLSv1];
-    IdHTTP.HandleRedirects := True;
-    IdHTTP.AllowCookies := True;
-    IdHTTP.IOHandler := IdSSL;
     // IdHTTPインスタンスにover18=yesのキャッシュを設定する
     if isOver18 then
     begin
-      IdHTTP.CookieManager := TIdCookieManager.Create(IdHTTP);
-      URI := TIdURI.Create('https://novel18.syosetu.com/');
-      try
-        IdHTTP.CookieManager.AddServerCookie('over18=yes', URI);
-      finally
-        URI.Free;
-      end;
-      asource := TStringStream.Create;
-      try
-        IdHTTP.Post('https://novel18.syosetu.com/', asource);
-      finally
-        asource.Free;
-      end;
+      CookieName := 'over18';
+      CookieData := 'yes';
+    end else begin
+      CookieName := '';
+      CookieData := '';
     end;
 
-    TextLine := LoadHTMLbyIndy(URL);
+    TextLine := GetHTML(URL);
     if TextLine <> '' then
     begin
       n := ParseTopPage(TextLine);
@@ -570,9 +529,6 @@ begin
     end;
   finally
     RegEx.Free;
-    IdSSL.Free;
-    IdHTTP.Free;
-    Cookies.Free;
   end;
 end.
 
