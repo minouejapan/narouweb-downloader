@@ -1,17 +1,17 @@
 ### narouweb-downloader
-na6dlwebは小説家になろうおよび姉妹サイトで公開されている小説をHTML形式のままでダウンロードするためのツールです。URLがhttps://ncode.syosetu.com/およびhttps://novel18.syosetu.com/で始まる作品をダウンロードしてHTMLファイルとして保存します。
+na6dlwebは小説家になろうおよび姉妹サイトで公開されている小説をHTML形式のままでダウンロードするためのツールです。URLが//ncode.syosetu.com/および//novel18.syosetu.com/で始まる作品をダウンロードしてHTMLファイルとして保存します。
 
 ### 動作環境
 Windows10/11上のコマンドプロンプト上で動作します。
 
 ### 実行に必要なファイル
 ~~na6dlweb.exeの実行にはopenssl-1.0.2が必要です。ssleay32.dllとlibeay32.dllがna6dl.exeと同じディレクトリー内もしくはPATHの通った場所にある必要があります。尚、リリースアーカイブに必要なライブラリが同梱されています。
-https://github.com/IndySockets/OpenSSL-Binaries~~
+https://github.com/IndySockets/OpenSSL-Binaries~~<br>
 **HTML取得をIndyからWinInetに変更したためIndyライブラリは不要となりました。**
 
 ### 実行ファイルの作り方
 * Delphi (XE2以降)：na6dlweb.dprojを開いてビルドしてください。尚、ビルドするためにはIndy10ライブラリとTregExprライブラリが必要です。
-*TregExprライブラリ：https://github.com/andgineer/TRegExpr
+* TregExprライブラリ：https://github.com/andgineer/TRegExpr
 
 ### 使い方
 コマンドプロンプト上で、<br>
